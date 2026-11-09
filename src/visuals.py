@@ -34,6 +34,7 @@ def gather_visuals(cfg: dict, script: dict, out_dir: Path, duration: float) -> l
     paths: list[Path] = []
     for i, q in enumerate(queries):
         dest = clips_dir / f"{i:02d}"
+
         try:
             if provider == "pexels":
                 paths.append(_pexels_video(q, dest, cfg, used_ids))
@@ -47,6 +48,7 @@ def gather_visuals(cfg: dict, script: dict, out_dir: Path, duration: float) -> l
             log(f"visual {i} ('{q[:30]}') failed: {e}; reusing previous", "warn")
             if paths:
                 paths.append(paths[-1])
+
     if not paths:
         raise RuntimeError("No visuals could be gathered.")
     log(f"visuals: {len(paths)} clips ({provider})", "ok")
