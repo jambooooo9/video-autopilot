@@ -4,18 +4,20 @@
 
 channels:
 
-  motivation:
-    name: "Daily Discipline"
-    niche: motivation
-    audience: "men & women 18–34 chasing self-improvement and discipline"
-    angle: "hard-truth, no-fluff motivation grounded in stoicism and action"
-    tone: "punchy, intense, cinematic"
-    voice: en-US-GuyNeural        # overrides tts.edge_voice
-    visual_style: "cinematic, moody, slow-motion, urban, gym, nature, dramatic light"
-    music_mood: "epic, building, inspirational"
-    platforms: [youtube, tiktok, instagram, facebook]
-    series: false
-    posts_per_day: 2
+  
+motivation:
+  name: "Built Different"
+  niche: motivation
+  audience: "ambitious young adults aged 18-34 interested in discipline, mental strength, success and personal growth"
+  angle: "powerful motivational lessons about self-discipline, consistency, overcoming obstacles and becoming the best version of yourself"
+  tone: "intense, confident, cinematic, emotional and inspiring"
+  voice: en-US-GuyNeural
+  visual_style: "dark cinematic visuals, intense gym training, lone athletes, mountain landscapes, sunrise, city nights, dramatic lighting and luxury lifestyle"
+  music_mood: "epic cinematic, emotional piano, powerful orchestral builds"
+  platforms: [youtube, tiktok, instagram, facebook]
+  series: false
+  posts_per_day: 1
+
 
   money:
     name: "Money Mechanics"
