@@ -1,7 +1,5 @@
 
-# ── Channels ─────────────────────────────────────────────────────────────────
-# One block per channel/account. Clone a block to add a channel (Playbook §7).
-# `--channel <key>` selects which block to run. Per-channel keys override settings.yaml.
+# Built Different — channel configuration
 
 channels:
   motivation:
@@ -13,44 +11,6 @@ channels:
     voice: en-US-GuyNeural
     visual_style: "dark cinematic visuals, intense gym training, lone athletes, mountain landscapes, sunrise, city nights, dramatic lighting and luxury lifestyle"
     music_mood: "epic cinematic, emotional piano, powerful orchestral builds"
-    platforms: [youtube, tiktok, instagram, facebook]
+    platforms: [youtube]
     series: false
     posts_per_day: 1
-
-  money:
-    name: "Money Mechanics"
-    niche: finance
-    audience: "20–40 yr olds who want practical money + side-hustle tips"
-    angle: "one actionable money concept per video, plainly explained"
-    tone: "confident, clear, slightly contrarian"
-    voice: en-US-AriaNeural
-    visual_style: "clean, modern, money, city, charts b-roll, lifestyle"
-    music_mood: "upbeat, modern, light"
-    platforms: [youtube, tiktok, instagram, facebook]
-    inject_disclaimer: finance
-    posts_per_day: 1
-
-  facts:
-    name: "Mind Blown Facts"
-    niche: psychology
-    audience: "general curious audience, all ages"
-    angle: "surprising psychology + science facts with a curiosity hook"
-    tone: "intriguing, friendly, fast-paced"
-    voice: en-US-JennyNeural
-    visual_style: "abstract, brain, space, nature macro, satisfying visuals"
-    music_mood: "curious, playful, light electronic"
-    platforms: [youtube, tiktok, instagram, facebook]
-    posts_per_day: 1
-
-  # ── Template: copy, rename the key, change the fields ──
-  # newchannel:
-  #   name: ""
-  #   niche: history
-  #   audience: ""
-  #   angle: ""
-  #   tone: ""
-  #   voice: en-US-AriaNeural
-  #   visual_style: ""
-  #   music_mood: ""
-  #   platforms: [youtube, tiktok, instagram, facebook]
-  #   posts_per_day: 1
