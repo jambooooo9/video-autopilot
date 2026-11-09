@@ -106,6 +106,7 @@ def _buffer(video: Path, meta: dict, caption: str) -> dict:
         "variables": {
             "input": {
                 "channelId": channel_id,
+                "saveToDraft": True,
                 "text": caption,
                 "schedulingType": "automatic",
                 "mode": "addToQueue",
