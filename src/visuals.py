@@ -35,8 +35,10 @@ def gather_visuals(cfg: dict, script: dict, out_dir: Path, duration: float) -> l
     for i, q in enumerate(queries):
         dest = clips_dir / f"{i:02d}"
         try:
-            if provider == "pexels":
+                        if provider == "pexels":
                 paths.append(_pexels_video(q, dest, cfg, used_ids))
+            elif provider == "pixabay":
+                paths.append(_pixabay_video(q, dest, used_ids))
             elif provider in ("fal", "replicate"):
                 paths.append(_ai_image(q, dest, cfg, provider))
             else:
@@ -116,4 +118,54 @@ def _ai_image(prompt: str, dest: Path, cfg: dict, provider: str) -> Path:
         out_field = r.json().get("output")
         img_url = out_field[0] if isinstance(out_field, list) else out_field
     out.write_bytes(requests.get(img_url, timeout=120).content)
+    return out
+def _pixabay_video(query: str, dest: Path, used_ids: Optional[set] = None) -> Path:
+    key = env("PIXABAY_API_KEY")
+    if not key:
+        raise SystemExit("PIXABAY_API_KEY missing")
+
+    used_ids = used_ids if used_ids is not None else set()
+
+    r = requests.get(
+        "https://pixabay.com/api/videos/",
+        params={
+            "key": key,
+            "q": query,
+            "per_page": 20,
+            "safesearch": "true",
+        },
+        timeout=30,
+    )
+    r.raise_for_status()
+
+    videos = r.json().get("hits", [])
+    if not videos:
+        raise RuntimeError("No Pixabay video results")
+
+    fresh = [v for v in videos if v.get("id") not in used_ids] or videos
+    video = fresh[0]
+    used_ids.add(video.get("id"))
+
+    sizes = video.get("videos", {})
+    candidates = [
+        f for f in sizes.values()
+        if f.get("url") and f.get("height", 0) >= f.get("width", 0)
+    ]
+
+    if not candidates:
+        candidates = [f for f in sizes.values() if f.get("url")]
+
+    if not candidates:
+        raise RuntimeError("No downloadable Pixabay video")
+
+    chosen = sorted(
+        candidates,
+        key=lambda f: abs(f.get("height", 0) - 1920)
+    )[0]
+
+    out = dest.with_suffix(".mp4")
+    response = requests.get(chosen["url"], timeout=120)
+    response.raise_for_status()
+    out.write_bytes(response.content)
+
     return out
