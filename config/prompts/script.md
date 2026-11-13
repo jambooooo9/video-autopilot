@@ -59,34 +59,35 @@ then the closer, joined into one flowing, natural narration of {word_budget}–{
 words. It must read as continuous human speech, not a list.
 
 
+
 Return ONLY valid JSON. Do not include markdown, code fences, explanations, or any text outside the JSON object.
 
 The response must be one valid JSON object with exactly these five keys:
 
-{
+{{
   "hook": "The opening line. Maximum 12 words. Must be a complete, powerful sentence.",
   "beats": [
-    {
+    {{
       "text": "Write 2-3 complete, natural spoken sentences for this beat. Make the message emotional, practical, and engaging.",
       "visual_cue": "Use literal, descriptive B-roll search terms. Describe real scenes that can be found in stock video libraries."
-    },
-    {
+    }},
+    {{
       "text": "Write 2-3 complete, natural spoken sentences for this beat.",
       "visual_cue": "Use literal B-roll search terms describing the scene."
-    },
-    {
+    }},
+    {{
       "text": "Write 2-3 complete, natural spoken sentences for this beat.",
       "visual_cue": "Use literal B-roll search terms describing the scene."
-    },
-    {
+    }},
+    {{
       "text": "Write 2-3 complete, natural spoken sentences for this beat.",
       "visual_cue": "Use literal B-roll search terms describing the scene."
-    }
+    }}
   ],
   "closer": "A memorable final line of 3-5 words that connects naturally to the hook and encourages a seamless video loop.",
-  "full_script": "Write the complete voiceover as one flowing string, between the exact word_budget and word_budget_max values specified in the prompt. Include the hook, all beats, and the closer in the correct order. Do not include visual cues.",
+  "full_script": "Write the complete voiceover as one flowing string, between {word_budget} and {word_budget_max} words. Include the hook, all beats, and the closer in the correct order. Do not include visual cues.",
   "on_screen_title": "A bold, attention-grabbing title of 3-5 words to display during the opening hook."
-}
+}}
 
 STRICT JSON RULES:
 - Use double quotes for every JSON key and string value.
@@ -95,11 +96,11 @@ STRICT JSON RULES:
 - Do not use single quotes.
 - Do not add comments.
 - Do not return incomplete JSON.
-- Make sure every opening brace, closing brace, opening bracket, and closing bracket is correctly matched.
-- The "beats" value must be a JSON array containing exactly 4 objects.
-- Every beat object must contain exactly "text" and "visual_cue".
-- The "full_script" must contain the complete voiceover and must respect the requested word count.
+- The beats value must be a JSON array containing exactly 4 objects.
+- Every beat object must contain exactly text and visual_cue.
+- The full_script must contain the complete voiceover and respect the requested word count.
 - All spoken content must be natural English and suitable for a motivational short-form video.
 - Avoid unsupported medical, hormonal, financial, or scientific claims.
 - Return the JSON object only.
+
 
