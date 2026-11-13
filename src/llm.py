@@ -67,25 +67,16 @@ def _openai_compatible(provider: str, prompt: str, llm: dict, max_tokens: int) -
             f"{key_var} missing in .env (required for llm.provider: {provider})."
         )
 
-    try:
-        from openai import OpenAI
-    except ImportError:
-        raise SystemExit(
-            "The 'openai' package is required for this provider. "
-            "Install it with: pip install openai"
-        )
-    # Ollama ignores the key but the SDK still needs a non-empty string.
+    from openai import OpenAI
+
     client = OpenAI(api_key=key or "not-needed", base_url=base_url)
 
-    # Gemini's newer models "think" before answering, silently eating into max_tokens
-    # and truncating short JSON tasks. We can't reliably turn thinking off through this
-    # compat layer, so just give it generous headroom instead.
-    call_max_tokens = max(max_tokens, 4096) if provider == "gemini" else max_tokens
+    call_max_tokens = max(max_tokens, 4096) if provider in ("gemini", "groq") else max_tokens
 
     def _call():
         params = {
             "model": llm.get("model", fallback_model),
-            "max_tokens": max(call_max_tokens, 4096) if provider == "groq" else call_max_tokens,
+            "max_tokens": call_max_tokens,
             "temperature": llm.get("temperature", 0.9),
             "messages": [{"role": "user", "content": prompt}],
         }
@@ -95,7 +86,17 @@ def _openai_compatible(provider: str, prompt: str, llm: dict, max_tokens: int) -
             params["reasoning_format"] = "hidden"
 
         resp = client.chat.completions.create(**params)
-        return resp.choices[0].message.content or ""
+        content = resp.choices[0].message.content
+
+        if not content:
+            raise RuntimeError(
+                f"{provider} returned empty content. "
+                f"Finish reason: {resp.choices[0].finish_reason}"
+            )
+
+        return content
+
+    return _with_retry(_call, llm)
 
 def _with_retry(call, llm: dict):
     """Retry on rate limits — free tiers (OpenRouter/Groq/Gemini) 429 often.
