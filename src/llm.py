@@ -83,16 +83,19 @@ def _openai_compatible(provider: str, prompt: str, llm: dict, max_tokens: int) -
     call_max_tokens = max(max_tokens, 4096) if provider == "gemini" else max_tokens
 
     def _call():
-        resp = client.chat.completions.create(
-            model=llm.get("model", fallback_model),
-            max_tokens=call_max_tokens,
-            temperature=llm.get("temperature", 0.9),
-            messages=[{"role": "user", "content": prompt}],
-        )
+        params = {
+            "model": llm.get("model", fallback_model),
+            "max_tokens": max(call_max_tokens, 4096) if provider == "groq" else call_max_tokens,
+            "temperature": llm.get("temperature", 0.9),
+            "messages": [{"role": "user", "content": prompt}],
+        }
+
+        if provider == "groq":
+            params["response_format"] = {"type": "json_object"}
+            params["reasoning_format"] = "hidden"
+
+        resp = client.chat.completions.create(**params)
         return resp.choices[0].message.content or ""
-
-    return _with_retry(_call, llm)
-
 
 def _with_retry(call, llm: dict):
     """Retry on rate limits — free tiers (OpenRouter/Groq/Gemini) 429 often.
