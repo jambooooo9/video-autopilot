@@ -84,7 +84,7 @@ def _openai_compatible(provider: str, prompt: str, llm: dict, max_tokens: int) -
         if provider == "groq":
             params["response_format"] = {"type": "json_object"}
 
-         try:
+        try:
             resp = client.chat.completions.create(**params)
         except Exception as e:
             if provider == "groq":
