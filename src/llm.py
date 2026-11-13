@@ -84,7 +84,18 @@ def _openai_compatible(provider: str, prompt: str, llm: dict, max_tokens: int) -
         if provider == "groq":
             params["response_format"] = {"type": "json_object"}
 
-        resp = client.chat.completions.create(**params)
+         try:
+            resp = client.chat.completions.create(**params)
+        except Exception as e:
+            if provider == "groq":
+                details = getattr(e, "body", None)
+                if details is None and getattr(e, "response", None) is not None:
+                    try:
+                        details = e.response.json()
+                    except Exception:
+                        details = str(e)
+                print("Groq API error details:", details, flush=True)
+            raise
         content = resp.choices[0].message.content
 
         if not content:
