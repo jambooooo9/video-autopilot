@@ -83,7 +83,6 @@ def _openai_compatible(provider: str, prompt: str, llm: dict, max_tokens: int) -
 
         if provider == "groq":
             params["response_format"] = {"type": "json_object"}
-            params["reasoning_format"] = "hidden"
 
         resp = client.chat.completions.create(**params)
         content = resp.choices[0].message.content
