@@ -106,10 +106,10 @@ def _buffer(video: Path, meta: dict, caption: str) -> dict:
         "variables": {
             "input": {
                 "channelId": channel_id,
-                "saveToDraft": True,
+                "saveToDraft": False,
                 "text": caption,
                 "schedulingType": "automatic",
-                "mode": "addToQueue",
+                "mode": "shareNow",
                 "assets": [
                     {"video": {"url": media_url}}
                 ],
