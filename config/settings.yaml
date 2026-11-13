@@ -11,7 +11,7 @@ llm:
   #   FREE  gemini     Google free tier — model: gemini-flash-latest (auto-tracks newest flash)
   provider: groq
   model: openai/gpt-oss-120b
-  temperature: 0.9             # higher = more creative hooks
+  temperature: 0.2             # higher = more creative hooks
 
 tts:
   provider: edge               # edge (free, no key) | elevenlabs (premium)
