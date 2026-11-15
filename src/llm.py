@@ -1,36 +1,68 @@
-
 """LLM adapter — Claude, OpenAI, and several free/cheap providers. Returns plain text.
 
 Providers (set `llm.provider` in config/settings.yaml):
 
   Paid / pay-as-you-go
-    anthropic    Claude (default)            key: ANTHROPIC_API_KEY
-    openai       GPT                         key: OPENAI_API_KEY
+    anthropic    Claude                         key: ANTHROPIC_API_KEY
+    openai       GPT                            key: OPENAI_API_KEY
 
   Free (no cost)
-    ollama       100% local, no key, no internet. Run `ollama serve` + `ollama pull llama3.1`.
-    groq         Generous free tier, very fast.   key: GROQ_API_KEY
-    openrouter   Has many ":free" models.         key: OPENROUTER_API_KEY
-    gemini       Google's free tier.              key: GEMINI_API_KEY
+    ollama       100% local, no key, no internet.
+    groq         Generous free tier, very fast.  key: GROQ_API_KEY
+    openrouter   Has many ":free" models.        key: OPENROUTER_API_KEY
+    gemini       Google's free tier.             key: GEMINI_API_KEY
 
-Groq, OpenRouter, Gemini, and Ollama all speak the OpenAI-compatible API, so they share
-one adapter — only the base URL, key, and default model differ.
+Groq, OpenRouter, Gemini, and Ollama use the OpenAI-compatible API.
 """
+
 from __future__ import annotations
 
 from .config import env
 
+
 # provider -> (base_url, api-key env var, fallback model, key-required?)
 _OPENAI_COMPATIBLE = {
-    "openai":     (None,                                              "OPENAI_API_KEY",     "gpt-4o-mini",                        True),
-    "ollama":     ("http://localhost:11434/v1",                       None,                 "llama3.1",                          False),
-    "groq":       ("https://api.groq.com/openai/v1",                  "GROQ_API_KEY",       "llama-3.3-70b-versatile",           True),
-    "openrouter": ("https://openrouter.ai/api/v1",                    "OPENROUTER_API_KEY", "meta-llama/llama-3.1-8b-instruct:free", True),
-    "gemini":     ("https://generativelanguage.googleapis.com/v1beta/openai/", "GEMINI_API_KEY", "gemini-flash-latest", True),
+    "openai": (
+        None,
+        "OPENAI_API_KEY",
+        "gpt-4o-mini",
+        True,
+    ),
+    "ollama": (
+        "http://localhost:11434/v1",
+        None,
+        "llama3.1",
+        False,
+    ),
+    "groq": (
+        "https://api.groq.com/openai/v1",
+        "GROQ_API_KEY",
+        "llama-3.3-70b-versatile",
+        True,
+    ),
+    "openrouter": (
+        "https://openrouter.ai/api/v1",
+        "OPENROUTER_API_KEY",
+        "meta-llama/llama-3.1-8b-instruct:free",
+        True,
+    ),
+    "gemini": (
+        "https://generativelanguage.googleapis.com/v1beta/openai/",
+        "GEMINI_API_KEY",
+        "gemini-flash-latest",
+        True,
+    ),
 }
 
 
-def complete(prompt: str, cfg: dict, max_tokens: int = 1500) -> str:
+def complete(
+    prompt: str,
+    cfg: dict,
+    max_tokens: int = 1500,
+    response_schema: dict | None = None,
+) -> str:
+    """Generate text, optionally using a stage-specific JSON schema."""
+
     llm = cfg["llm"]
     provider = llm.get("provider", "anthropic")
 
@@ -38,7 +70,13 @@ def complete(prompt: str, cfg: dict, max_tokens: int = 1500) -> str:
         return _anthropic(prompt, llm, max_tokens)
 
     if provider in _OPENAI_COMPATIBLE:
-        return _openai_compatible(provider, prompt, llm, max_tokens)
+        return _openai_compatible(
+            provider,
+            prompt,
+            llm,
+            max_tokens,
+            response_schema,
+        )
 
     raise ValueError(
         f"Unknown llm.provider: {provider!r}. "
@@ -50,6 +88,7 @@ def _anthropic(prompt: str, llm: dict, max_tokens: int) -> str:
     import anthropic
 
     key = env("ANTHROPIC_API_KEY")
+
     if not key:
         raise SystemExit("ANTHROPIC_API_KEY missing in .env")
 
@@ -71,22 +110,27 @@ def _openai_compatible(
     provider: str,
     prompt: str,
     llm: dict,
-    max_tokens: int
+    max_tokens: int,
+    response_schema: dict | None = None,
 ) -> str:
-    base_url, key_var, fallback_model, key_required = _OPENAI_COMPATIBLE[provider]
+
+    base_url, key_var, fallback_model, key_required = (
+        _OPENAI_COMPATIBLE[provider]
+    )
 
     key = env(key_var) if key_var else None
 
     if key_required and not key:
         raise SystemExit(
-            f"{key_var} missing in .env (required for llm.provider: {provider})."
+            f"{key_var} missing in .env "
+            f"(required for llm.provider: {provider})."
         )
 
     from openai import OpenAI
 
     client = OpenAI(
         api_key=key or "not-needed",
-        base_url=base_url
+        base_url=base_url,
     )
 
     call_max_tokens = (
@@ -100,62 +144,29 @@ def _openai_compatible(
             "model": llm.get("model", fallback_model),
             "max_tokens": call_max_tokens,
             "temperature": llm.get("temperature", 0.9),
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": [
+                {"role": "user", "content": prompt}
+            ],
         }
 
-        # Groq strict JSON Schema mode.
+        # Groq uses the schema supplied by the current pipeline stage.
+        # If no schema is supplied, use ordinary JSON mode instead.
         if provider == "groq":
-            params["response_format"] = {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "motivational_script",
-                    "strict": True,
-                    "schema": {
-                        "type": "object",
-                        "properties": {
-                            "hook": {
-                                "type": "string"
-                            },
-                            "beats": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "text": {
-                                            "type": "string"
-                                        },
-                                        "visual_cue": {
-                                            "type": "string"
-                                        }
-                                    },
-                                    "required": [
-                                        "text",
-                                        "visual_cue"
-                                    ],
-                                    "additionalProperties": False
-                                }
-                            },
-                            "closer": {
-                                "type": "string"
-                            },
-                            "full_script": {
-                                "type": "string"
-                            },
-                            "on_screen_title": {
-                                "type": "string"
-                            }
-                        },
-                        "required": [
-                            "hook",
-                            "beats",
-                            "closer",
-                            "full_script",
-                            "on_screen_title"
-                        ],
-                        "additionalProperties": False
-                    }
+
+            if response_schema is not None:
+                params["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "stage_response",
+                        "strict": True,
+                        "schema": response_schema,
+                    },
                 }
-            }
+
+            else:
+                params["response_format"] = {
+                    "type": "json_object"
+                }
 
         try:
             resp = client.chat.completions.create(**params)
@@ -170,7 +181,11 @@ def _openai_compatible(
                     except Exception:
                         details = str(e)
 
-                print("Groq API error details:", details, flush=True)
+                print(
+                    "Groq API error details:",
+                    details,
+                    flush=True,
+                )
 
             raise
 
@@ -188,10 +203,8 @@ def _openai_compatible(
 
 
 def _with_retry(call, llm: dict):
-    """Retry on rate limits — free tiers (OpenRouter/Groq/Gemini) 429 often.
+    """Retry on rate limits and connection errors."""
 
-    Honors the provider's Retry-After hint when present, else exponential backoff.
-    """
     import time
 
     from openai import APIConnectionError, RateLimitError
@@ -211,14 +224,15 @@ def _with_retry(call, llm: dict):
             print(
                 f"  ! LLM rate-limited; retrying in {wait:.0f}s "
                 f"(attempt {attempt + 1}/{retries})",
-                flush=True
+                flush=True,
             )
 
             time.sleep(wait)
 
 
 def _retry_after(err) -> float | None:
-    """Pull a Retry-After hint (seconds) out of an OpenAI-style error."""
+    """Read a Retry-After hint from an OpenAI-style error."""
+
     try:
         meta = err.response.json().get("error", {}).get("metadata", {})
 
