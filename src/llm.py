@@ -1,16 +1,17 @@
+
 """LLM adapter — Claude, OpenAI, and several free/cheap providers. Returns plain text.
 
 Providers (set `llm.provider` in config/settings.yaml):
 
-  Paid / pay-as-you-go
-    anthropic    Claude                         key: ANTHROPIC_API_KEY
-    openai       GPT                            key: OPENAI_API_KEY
+  Paid:
+    anthropic    Claude
+    openai       GPT
 
-  Free (no cost)
-    ollama       100% local, no key, no internet.
-    groq         Generous free tier, very fast.  key: GROQ_API_KEY
-    openrouter   Has many ":free" models.        key: OPENROUTER_API_KEY
-    gemini       Google's free tier.             key: GEMINI_API_KEY
+  Free:
+    ollama       Local model, no API key
+    groq         Fast, generous free tier
+    openrouter   Free and paid models
+    gemini       Google's models
 
 Groq, OpenRouter, Gemini, and Ollama use the OpenAI-compatible API.
 """
@@ -133,21 +134,31 @@ def _openai_compatible(
         base_url=base_url,
     )
 
-    call_max_tokens = (
-        max(max_tokens, 4096)
-        if provider in ("gemini", "groq")
-        else max_tokens
-    )
+    # Groq GPT-OSS needs enough completion budget for reasoning
+    # and the final JSON response.
+    if provider == "groq":
+        call_max_tokens = max(max_tokens, 8192)
+    elif provider == "gemini":
+        call_max_tokens = max(max_tokens, 4096)
+    else:
+        call_max_tokens = max_tokens
 
     def _call():
         params = {
             "model": llm.get("model", fallback_model),
-            "max_tokens": call_max_tokens,
             "temperature": llm.get("temperature", 0.9),
             "messages": [
                 {"role": "user", "content": prompt}
             ],
         }
+
+        if provider == "groq":
+            params["max_completion_tokens"] = call_max_tokens
+
+            if llm.get("model") == "openai/gpt-oss-120b":
+                params["reasoning_effort"] = "low"
+        else:
+            params["max_tokens"] = call_max_tokens
 
         # Groq uses the schema supplied by the current pipeline stage.
         # If no schema is supplied, use ordinary JSON mode instead.
