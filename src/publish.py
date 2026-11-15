@@ -244,7 +244,10 @@ def _buffer(video: Path, meta: dict, caption: str,
                 "categoryId": "22",
                 "privacy": "public",
                 "madeForKids": False,
-            }
+                "isAiGenerated": bool(
+                    cfg.get("compliance", {}).get("ai_disclosure", False)
+        ),
+    }            
 
         elif platform == "tiktok":
             metadata["tiktok"] = {
