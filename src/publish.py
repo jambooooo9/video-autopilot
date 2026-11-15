@@ -391,7 +391,7 @@ def _upload_post(cfg, video, meta, caption, platforms) -> dict:
     import requests
 
     key = env("UPLOAD_POST_API_KEY")
-    user = env("UPLOAD_POST_USER)
+    user = env("UPLOAD_POST_USER")
 
     if not key:
         raise SystemExit("UPLOAD_POST_API_KEY missing in .env")
