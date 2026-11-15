@@ -183,23 +183,46 @@ def _openai_compatible(
             resp = client.chat.completions.create(**params)
 
         except Exception as e:
-            if provider == "groq":
-                details = getattr(e, "body", None)
+            details = getattr(e, "body", None)
 
-                if details is None and getattr(e, "response", None) is not None:
-                    try:
-                        details = e.response.json()
-                    except Exception:
-                        details = str(e)
+            if details is None and getattr(e, "response", None) is not None:
+                try:
+                    details = e.response.json()
+                except Exception:
+                    details = str(e)
 
+            print(
+                f"{provider} API error details:",
+                details or str(e),
+                flush=True,
+            )
+
+            # If Groq rejects strict JSON schema output,
+            # retry once using JSON Object Mode.
+            if (
+                provider == "groq"
+                and response_schema is not None
+                and (
+                    "json_validate_failed" in str(details)
+                    or "json_validate_failed" in str(e)
+                )
+            ):
                 print(
-                    "Groq API error details:",
-                    details,
+                    "Retrying Groq with JSON Object Mode...",
                     flush=True,
                 )
 
-            raise
+                fallback_params = params.copy()
+                fallback_params["response_format"] = {
+                    "type": "json_object"
+                }
 
+                resp = client.chat.completions.create(
+                    **fallback_params
+                )
+
+            else:
+                raise
         content = resp.choices[0].message.content
 
         if not content:
