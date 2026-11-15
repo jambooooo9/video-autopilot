@@ -1,5 +1,5 @@
 
-"""Stage 8 — publish videos through Buffer or existing providers."""
+"""Stage 8 — publish the same video to multiple platforms through Buffer."""
 from __future__ import annotations
 
 import time
@@ -7,6 +7,9 @@ from pathlib import Path
 
 from .config import env
 from .utils import log
+
+
+BUFFER_URL = "https://api.buffer.com"
 
 
 def publish(cfg: dict, video: Path, meta: dict) -> dict:
@@ -24,7 +27,7 @@ def publish(cfg: dict, video: Path, meta: dict) -> dict:
         return {"status": "dry_run", "platforms": platforms, "caption": caption}
 
     if provider == "buffer":
-        return _buffer(video, meta, caption)
+        return _buffer(video, meta, caption, platforms, cfg)
 
     if provider == "ayrshare":
         return _ayrshare(cfg, video, meta, caption, platforms)
@@ -40,7 +43,107 @@ def _caption(meta: dict) -> str:
     return f"{meta.get('description', meta.get('title', ''))}\n\n{tags}".strip()
 
 
-def _buffer(video: Path, meta: dict, caption: str) -> dict:
+def _buffer_request(buffer_key: str, query: str, variables: dict | None = None) -> dict:
+    import requests
+
+    response = requests.post(
+        BUFFER_URL,
+        headers={
+            "Authorization": f"Bearer {buffer_key}",
+            "Content-Type": "application/json",
+        },
+        json={"query": query, "variables": variables or {}},
+        timeout=120,
+    )
+
+    response.raise_for_status()
+    result = response.json()
+
+    if result.get("errors"):
+        raise RuntimeError(f"Buffer GraphQL error: {result['errors']}")
+
+    return result.get("data", {})
+
+
+def _buffer_channels(buffer_key: str) -> dict:
+    """Find the three connected channels in the same Buffer organization."""
+
+    account_query = """
+    query {
+      account {
+        organizations {
+          id
+          name
+        }
+      }
+    }
+    """
+
+    account = _buffer_request(buffer_key, account_query)
+    organizations = account.get("account", {}).get("organizations", [])
+
+    if not organizations:
+        raise RuntimeError("No Buffer organization was found.")
+
+    channels_query = """
+    query GetChannels($organizationId: OrganizationId!) {
+      channels(input: { organizationId: $organizationId }) {
+        id
+        name
+        service
+        isDisconnected
+        isLocked
+      }
+    }
+    """
+
+    required = {"youtube", "tiktok", "instagram"}
+    matching_organizations = []
+
+    for organization in organizations:
+        data = _buffer_request(
+            buffer_key,
+            channels_query,
+            {"organizationId": organization["id"]},
+        )
+
+        channels = data.get("channels", [])
+        available = {}
+
+        for channel in channels:
+            service = str(channel.get("service", "")).lower()
+
+            if (
+                service in required
+                and not channel.get("isDisconnected")
+                and not channel.get("isLocked")
+            ):
+                available[service] = channel
+
+        if required.issubset(available):
+            matching_organizations.append((organization, available))
+
+    if len(matching_organizations) == 0:
+        raise RuntimeError(
+            "Could not find YouTube, TikTok and Instagram together "
+            "in one active Buffer organization. Check your connected channels."
+        )
+
+    if len(matching_organizations) > 1:
+        raise RuntimeError(
+            "More than one Buffer organization has all three channels. "
+            "Please configure one organization before publishing."
+        )
+
+    organization, channels = matching_organizations[0]
+
+    log(f"Buffer organization: {organization['name']}", "ok")
+
+    return channels
+
+
+def _buffer(video: Path, meta: dict, caption: str,
+            platforms: list, cfg: dict) -> dict:
     import requests
 
     cloud = env("CLOUDINARY_CLOUD_NAME")
@@ -48,7 +151,6 @@ def _buffer(video: Path, meta: dict, caption: str) -> dict:
     api_secret = env("CLOUDINARY_API_SECRET")
     preset = env("CLOUDINARY_UPLOAD_PRESET")
     buffer_key = env("BUFFER_API_KEY")
-    channel_id = env("BUFFER_CHANNEL_ID")
 
     required = {
         "CLOUDINARY_CLOUD_NAME": cloud,
@@ -56,13 +158,16 @@ def _buffer(video: Path, meta: dict, caption: str) -> dict:
         "CLOUDINARY_API_SECRET": api_secret,
         "CLOUDINARY_UPLOAD_PRESET": preset,
         "BUFFER_API_KEY": buffer_key,
-        "BUFFER_CHANNEL_ID": channel_id,
     }
-    missing = [name for name, value in required.items() if not value]
-    if missing:
-        raise SystemExit("Missing environment variables: " + ", ".join(missing))
 
-    # 1. Upload the generated MP4 to Cloudinary.
+    missing = [name for name, value in required.items() if not value]
+
+    if missing:
+        raise SystemExit(
+            "Missing environment variables: " + ", ".join(missing)
+        )
+
+    # 1. Upload the video ONCE to Cloudinary.
     upload_url = f"https://api.cloudinary.com/v1_1/{cloud}/video/upload"
 
     with video.open("rb") as file_handle:
@@ -75,16 +180,37 @@ def _buffer(video: Path, meta: dict, caption: str) -> dict:
         )
 
     upload.raise_for_status()
+
     media_url = upload.json().get("secure_url")
+
     if not media_url:
-        raise RuntimeError("Cloudinary did not return a secure video URL")
+        raise RuntimeError("Cloudinary did not return a secure video URL.")
 
-    log("publish: video uploaded to Cloudinary", "ok")
+    log("Video uploaded to Cloudinary once.", "ok")
 
-    # 2. Create a YouTube post in Buffer's automatic queue.
+    # 2. Find the connected Buffer channels.
+    channels = _buffer_channels(buffer_key)
+
+    # 3. Prepare the same video asset for every platform.
     title = str(meta.get("title") or "Built Different")[:100]
 
-    query = """
+    video_asset = [
+        {"video": {"url": media_url}}
+    ]
+
+    # Only publish to the requested three platforms.
+    requested = {str(p).lower() for p in platforms}
+    targets = ["youtube", "tiktok", "instagram"]
+
+    targets = [p for p in targets if p in requested]
+
+    if set(targets) != {"youtube", "tiktok", "instagram"}:
+        raise RuntimeError(
+            "Publishing is configured to require youtube, tiktok and "
+            "instagram. Update config/settings.yaml first."
+        )
+
+    mutation = """
     mutation CreatePost($input: CreatePostInput!) {
       createPost(input: $input) {
         ... on PostActionSuccess {
@@ -92,6 +218,7 @@ def _buffer(video: Path, meta: dict, caption: str) -> dict:
             id
             text
             dueAt
+            status
           }
         }
         ... on MutationError {
@@ -101,62 +228,100 @@ def _buffer(video: Path, meta: dict, caption: str) -> dict:
     }
     """
 
-    payload = {
-        "query": query,
-        "variables": {
-            "input": {
-                "channelId": channel_id,
-                "saveToDraft": False,
-                "text": caption,
-                "schedulingType": "automatic",
-                "mode": "shareNow",
-                "assets": [
-                    {"video": {"url": media_url}}
-                ],
-                "metadata": {
-                    "youtube": {
-                        "title": title,
-                        "categoryId": "22",
-                        "privacy": "public",
-                        "madeForKids": False
-                    }
-                }
+    results = {}
+    failures = {}
+
+    # 4. Create one post per platform using the SAME video URL.
+    for index, platform in enumerate(targets):
+
+        channel = channels[platform]
+
+        metadata = {}
+
+        if platform == "youtube":
+            metadata["youtube"] = {
+                "title": title,
+                "categoryId": "22",
+                "privacy": "public",
+                "madeForKids": False,
             }
+
+        elif platform == "tiktok":
+            metadata["tiktok"] = {
+                "isAiGenerated": bool(
+                    cfg.get("compliance", {}).get("ai_disclosure", False)
+                )
+            }
+
+        elif platform == "instagram":
+            metadata["instagram"] = {
+                "type": "reel",
+                "shouldShareToFeed": True,
+                "isAiGenerated": bool(
+                    cfg.get("compliance", {}).get("ai_disclosure", False)
+                ),
+            }
+
+        post_input = {
+            "channelId": channel["id"],
+            "saveToDraft": False,
+            "text": caption,
+            "schedulingType": "automatic",
+            "mode": "shareNow",
+            "assets": video_asset,
+            "metadata": metadata,
+            "aiAssisted": True,
         }
-    }
 
-    response = requests.post(
-        "https://api.buffer.com",
-        headers={
-            "Authorization": f"Bearer {buffer_key}",
-            "Content-Type": "application/json",
-        },
-        json=payload,
-        timeout=120,
-    )
-    response.raise_for_status()
+        try:
+            data = _buffer_request(
+                buffer_key,
+                mutation,
+                {"input": post_input},
+            )
 
-    result = response.json()
+            action = data.get("createPost", {})
 
-    if result.get("errors"):
-        raise RuntimeError(f"Buffer GraphQL error: {result['errors']}")
+            if action.get("message"):
+                raise RuntimeError(action["message"])
 
-    action = result.get("data", {}).get("createPost", {})
-    if action.get("message"):
-        raise RuntimeError(f"Buffer rejected the post: {action['message']}")
+            post = action.get("post")
 
-    post = action.get("post")
-    if not post:
-        raise RuntimeError(f"Unexpected Buffer response: {result}")
+            if not post:
+                raise RuntimeError("Buffer returned no post confirmation.")
 
-    log(f"publish: Buffer queued YouTube post {post['id']}", "ok")
+            results[platform] = {
+                "post_id": post["id"],
+                "status": post.get("status"),
+                "due_at": post.get("dueAt"),
+            }
+
+            log(
+                f"Buffer {platform}: post submitted ({post['id']})",
+                "ok",
+            )
+
+        except Exception as error:
+            failures[platform] = str(error)
+            log(f"Buffer {platform}: FAILED — {error}", "err")
+
+        if index < len(targets) - 1:
+            time.sleep(cfg["publish"].get("stagger_seconds", 5))
+
+    # 5. Report the result without hiding partial failures.
+    if failures:
+        raise RuntimeError(
+            "Some Buffer posts failed. Successful posts: "
+            f"{list(results.keys())}. Failed posts: {failures}. "
+            "Check Buffer before retrying to avoid duplicate posts."
+        )
+
+    log("Same video submitted successfully to all three platforms.", "ok")
 
     return {
-        "status": "queued",
+        "status": "submitted",
         "provider": "buffer",
-        "channel": "youtube",
-        "post_id": post["id"],
-        "due_at": post.get("dueAt"),
+        "results": results,
         "media_url": media_url,
     }
 
@@ -175,24 +340,29 @@ def _ayrshare(cfg, video, meta, caption, platforms) -> dict:
             files={"file": handle},
             timeout=300,
         )
+
     up.raise_for_status()
     media_url = up.json().get("url") or up.json().get("mediaUrl")
 
     results = {}
+
     for i, platform in enumerate(platforms):
         if i:
             time.sleep(cfg["publish"].get("stagger_seconds", 0))
+
         payload = {
             "post": caption,
             "platforms": [platform],
             "mediaUrls": [media_url],
             "isVideo": True,
         }
+
         if platform == "youtube":
             payload["youTubeOptions"] = {
                 "title": meta["title"][:100],
                 "shorts": True,
             }
+
         if cfg["compliance"].get("ai_disclosure"):
             payload.setdefault("tikTokOptions", {})["aiGenerated"] = True
 
@@ -205,9 +375,14 @@ def _ayrshare(cfg, video, meta, caption, platforms) -> dict:
             json=payload,
             timeout=120,
         )
+
         ok = r.status_code < 300
         results[platform] = "posted" if ok else f"error {r.status_code}: {r.text[:200]}"
-        log(f"publish→{platform}: {results[platform]}", "ok" if ok else "err")
+
+        log(
+            f"publish→{platform}: {results[platform]}",
+            "ok" if ok else "err",
+        )
 
     return {"status": "posted", "results": results}
 
@@ -216,7 +391,8 @@ def _upload_post(cfg, video, meta, caption, platforms) -> dict:
     import requests
 
     key = env("UPLOAD_POST_API_KEY")
-    user = env("UPLOAD_POST_USER")
+    user = env("UPLOAD_POST_USER)
+
     if not key:
         raise SystemExit("UPLOAD_POST_API_KEY missing in .env")
 
@@ -235,10 +411,12 @@ def _upload_post(cfg, video, meta, caption, platforms) -> dict:
         )
 
     ok = r.status_code < 300
+
     log(
         f"publish: upload-post {'ok' if ok else 'error'} ({r.status_code})",
         "ok" if ok else "err",
     )
+
     return {
         "status": "posted" if ok else "error",
         "response": r.text[:300],
