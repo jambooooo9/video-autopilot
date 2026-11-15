@@ -1,4 +1,5 @@
 """Stage 2 — turn an idea into a tight, retention-optimized voiceover script."""
+
 from __future__ import annotations
 
 import json
@@ -9,54 +10,145 @@ from .llm import complete
 from .utils import extract_json, log
 
 
+# JSON schema specifically for the script-writing stage.
+SCRIPT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "hook": {
+            "type": "string"
+        },
+        "beats": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "text": {
+                        "type": "string"
+                    },
+                    "visual_cue": {
+                        "type": "string"
+                    },
+                },
+                "required": [
+                    "text",
+                    "visual_cue"
+                ],
+                "additionalProperties": False,
+            },
+        },
+        "closer": {
+            "type": "string"
+        },
+        "full_script": {
+            "type": "string"
+        },
+        "on_screen_title": {
+            "type": "string"
+        },
+    },
+    "required": [
+        "hook",
+        "beats",
+        "closer",
+        "full_script",
+        "on_screen_title",
+    ],
+    "additionalProperties": False,
+}
+
+
 def write_script(cfg: dict, idea: dict) -> dict:
     ch = cfg["channel"]
     target = cfg["video"]["target_seconds"]
-    word_budget = int(target * 2.4)      # ~2.4 spoken words/sec — lower bound
-    word_budget_max = int(target * 3.0)  # upper bound for a brisk read
+
+    word_budget = int(target * 2.4)
+    word_budget_max = int(target * 3.0)
 
     disclaimer_line = ""
     dkey = ch.get("inject_disclaimer")
+
     if dkey:
         text = cfg["compliance"]["disclaimers"].get(dkey, "")
         if text:
-            disclaimer_line = f'- End the script with this exact disclaimer: "{text}"'
+            disclaimer_line = (
+                f'- End the script with this exact disclaimer: "{text}"'
+            )
 
     voice_ref = style_examples(ch["key"])
     notes = strategy_notes(ch["key"])
+
     prompt = load_prompt("script").format(
-        niche=ch["niche"], name=ch["name"], tone=ch["tone"], audience=ch["audience"],
-        title=idea["title"], concept=idea["concept"], hook_angle=idea.get("hook_angle", ""),
+        niche=ch["niche"],
+        name=ch["name"],
+        tone=ch["tone"],
+        audience=ch["audience"],
+        title=idea["title"],
+        concept=idea["concept"],
+        hook_angle=idea.get("hook_angle", ""),
         primary_keyword=idea.get("primary_keyword", idea["title"]),
         search_question=idea.get("search_question", ""),
         style_reference=voice_ref or "(none provided — use the tone above)",
         creator_notes=notes or "(none provided)",
-        target_seconds=target, word_budget=word_budget, word_budget_max=word_budget_max,
+        target_seconds=target,
+        word_budget=word_budget,
+        word_budget_max=word_budget_max,
         disclaimer_line=disclaimer_line,
     )
 
-    script = extract_json(complete(prompt, cfg, max_tokens=1500))
+    # Generate the initial script using the script-specific schema.
+    script = extract_json(
+        complete(
+            prompt,
+            cfg,
+            max_tokens=1500,
+            response_schema=SCRIPT_SCHEMA,
+        )
+    )
+
     if not script.get("full_script"):
         raise RuntimeError("Scriptwriter returned no full_script.")
 
-    # Small free models tend to under-write. Expand the draft toward the budget
-    # (models hit a target far better when expanding existing text than writing cold).
+    # Expand short scripts toward the target word budget.
     min_words = int(word_budget * 0.85)
+
     for _ in range(2):
         wc = len(script["full_script"].split())
+
         if wc >= min_words:
             break
-        log(f"script short ({wc}w) — expanding toward {word_budget}w", "warn")
+
+        log(
+            f"script short ({wc}w) — expanding toward {word_budget}w",
+            "warn",
+        )
+
         expand = (
             f"This voiceover script is too short at {wc} words. Rewrite it to be "
-            f"{word_budget}-{word_budget_max} words by deepening each beat with concrete, "
-            f"vivid detail and complete spoken sentences. Keep the hook and the punchy tone. "
-            f"Return the SAME JSON shape.\n\nCurrent script JSON:\n{json.dumps(script)}"
+            f"{word_budget}-{word_budget_max} words by deepening each beat with "
+            f"concrete, vivid detail and complete spoken sentences. "
+            f"Keep the hook and the punchy tone. "
+            f"Return the SAME JSON shape.\n\n"
+            f"Current script JSON:\n{json.dumps(script)}"
         )
-        expanded = extract_json(complete(expand, cfg, max_tokens=1500))
+
+        # Expansion must use the same script schema.
+        expanded = extract_json(
+            complete(
+                expand,
+                cfg,
+                max_tokens=1500,
+                response_schema=SCRIPT_SCHEMA,
+            )
+        )
+
         if expanded.get("full_script"):
             script = expanded
 
     wc = len(script["full_script"].split())
-    log(f"script: hook + {len(script.get('beats', []))} beats, {wc} words", "ok")
+
+    log(
+        f"script: hook + {len(script.get('beats', []))} beats, {wc} words",
+        "ok",
+    )
+
     return script
