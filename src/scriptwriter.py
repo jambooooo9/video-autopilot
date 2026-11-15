@@ -1,4 +1,5 @@
-"""Stage 2 — turn an idea into a tight, retention-optimized voiceover script."""
+
+"""Stage 2 — turn an idea into a retention-optimized voiceover script."""
 
 from __future__ import annotations
 
@@ -8,53 +9,6 @@ from .config import load_prompt
 from .knowledge import strategy_notes, style_examples
 from .llm import complete
 from .utils import extract_json, log
-
-
-# JSON schema specifically for the script-writing stage.
-SCRIPT_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "hook": {
-            "type": "string"
-        },
-        "beats": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "text": {
-                        "type": "string"
-                    },
-                    "visual_cue": {
-                        "type": "string"
-                    },
-                },
-                "required": [
-                    "text",
-                    "visual_cue"
-                ],
-                "additionalProperties": False,
-            },
-        },
-        "closer": {
-            "type": "string"
-        },
-        "full_script": {
-            "type": "string"
-        },
-        "on_screen_title": {
-            "type": "string"
-        },
-    },
-    "required": [
-        "hook",
-        "beats",
-        "closer",
-        "full_script",
-        "on_screen_title",
-    ],
-    "additionalProperties": False,
-}
 
 
 def write_script(cfg: dict, idea: dict) -> dict:
@@ -95,13 +49,12 @@ def write_script(cfg: dict, idea: dict) -> dict:
         disclaimer_line=disclaimer_line,
     )
 
-    # Generate the initial script using the script-specific schema.
+    # Use JSON Object mode instead of strict schema mode.
     script = extract_json(
         complete(
             prompt,
             cfg,
             max_tokens=1500,
-            response_schema=SCRIPT_SCHEMA,
         )
     )
 
@@ -131,13 +84,11 @@ def write_script(cfg: dict, idea: dict) -> dict:
             f"Current script JSON:\n{json.dumps(script)}"
         )
 
-        # Expansion must use the same script schema.
         expanded = extract_json(
             complete(
                 expand,
                 cfg,
                 max_tokens=1500,
-                response_schema=SCRIPT_SCHEMA,
             )
         )
 
