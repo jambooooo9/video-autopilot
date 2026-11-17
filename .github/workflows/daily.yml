@@ -3,9 +3,9 @@ name: Daily Video Autopilot
 # Runs the pipeline on a schedule (free, no server needed) and on a manual button.
 on:
   schedule:
-    # 09:00 UTC every day. GitHub cron is UTC; adjust to your timezone.
-    # Scheduled runs may be delayed a few minutes under load — fine for daily videos.
-    - cron: "0 9 * * *"
+    # Morocco time: 01:00, 13:00, 19:00
+    # GitHub uses UTC (currently Morocco is UTC+1).
+    - cron: "0 0,12,18 * * *"
   workflow_dispatch:
     inputs:
       dry_run:
